@@ -1,4 +1,5 @@
 import sys
+import json
 import requests
 
 
@@ -45,39 +46,67 @@ def find_likely_cause(health_data: dict):
 def recommend_action(severity: str):
     if severity == "SEV-1":
         return "Page on-call immediately, start incident bridge, check rollback readiness."
+
     if severity == "SEV-2":
         return "Notify service owner, investigate recent changes, validate dependency health."
+
     if severity == "SEV-3":
         return "Monitor closely and review logs/metrics for trend confirmation."
+
     return "No immediate action required."
 
 
-def analyze_health(health_data: dict):
+def build_incident_analysis(health_data: dict):
     severity = classify_severity(health_data)
     likely_cause = find_likely_cause(health_data)
     action = recommend_action(severity)
 
+    return {
+        "service": health_data["service"],
+        "status": health_data["status"],
+        "severity": severity,
+        "evidence": {
+            "availability": health_data["availability"],
+            "latency_p95_ms": health_data["latency_p95_ms"],
+            "error_rate_percent": health_data["error_rate_percent"],
+            "recent_change": health_data["recent_change"],
+        },
+        "likely_cause": likely_cause,
+        "recommended_action": action,
+        "leadership_summary": (
+            f'{health_data["service"]} is currently {health_data["status"]} '
+            f'with severity {severity}. Main signals: availability '
+            f'{health_data["availability"]}, p95 latency '
+            f'{health_data["latency_p95_ms"]} ms, error rate '
+            f'{health_data["error_rate_percent"]}%.'
+        ),
+    }
+
+
+def format_report(analysis: dict):
+    evidence = analysis["evidence"]
+
     return f"""
 ================ SRE INCIDENT TRIAGE REPORT ================
 
-Service: {health_data["service"]}
-Status: {health_data["status"].upper()}
-Severity: {severity}
+Service: {analysis["service"]}
+Status: {analysis["status"].upper()}
+Severity: {analysis["severity"]}
 
 Evidence:
-- Availability: {health_data["availability"]}
-- P95 latency: {health_data["latency_p95_ms"]} ms
-- Error rate: {health_data["error_rate_percent"]}%
-- Recent change: {health_data["recent_change"]}
+- Availability: {evidence["availability"]}
+- P95 latency: {evidence["latency_p95_ms"]} ms
+- Error rate: {evidence["error_rate_percent"]}%
+- Recent change: {evidence["recent_change"]}
 
 Likely cause:
-{likely_cause}
+{analysis["likely_cause"]}
 
 Recommended action:
-{action}
+{analysis["recommended_action"]}
 
 Leadership summary:
-{health_data["service"]} is currently {health_data["status"]} with severity {severity}. The main signals are availability {health_data["availability"]}, p95 latency {health_data["latency_p95_ms"]} ms, and error rate {health_data["error_rate_percent"]}%.
+{analysis["leadership_summary"]}
 
 ============================================================
 """
@@ -90,6 +119,11 @@ if __name__ == "__main__":
         sys.exit(1)
 
     service_name = sys.argv[1]
+
     health = get_service_health(service_name)
-    analysis = analyze_health(health)
-    print(analysis)
+    analysis = build_incident_analysis(health)
+
+    print(format_report(analysis))
+
+    print("Structured JSON output:")
+    print(json.dumps(analysis, indent=2))
