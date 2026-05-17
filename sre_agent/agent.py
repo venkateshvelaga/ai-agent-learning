@@ -1,10 +1,12 @@
 import sys
+import os
 import json
 import requests
 
 
 def get_service_health(service_name: str):
-    url = f"http://127.0.0.1:8000/health/{service_name}"
+    base_url = os.getenv("MONITORING_API_BASE_URL", "http://127.0.0.1:8000")
+    url = f"{base_url}/health/{service_name}"
 
     try:
         response = requests.get(url, timeout=5)
