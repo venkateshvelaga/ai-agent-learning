@@ -9,37 +9,77 @@ def get_service_health(service_name: str):
     return response.json()
 
 
-def analyze_health(health_data: dict):
+def classify_severity(health_data: dict):
     status = health_data["status"]
+    latency = health_data["latency_p95_ms"]
+    error_rate = health_data["error_rate_percent"]
+    availability = float(health_data["availability"].replace("%", ""))
 
     if status == "healthy":
-        return f"""
-Service: {health_data["service"]}
-Status: HEALTHY
+        return "SEV-4"
 
-Availability: {health_data["availability"]}
-P95 latency: {health_data["latency_p95_ms"]} ms
-Error rate: {health_data["error_rate_percent"]}%
-Recent change: {health_data["recent_change"]}
+    if availability < 99.5 or error_rate >= 7.0:
+        return "SEV-1"
 
-Decision:
-No immediate action required.
-"""
+    if latency >= 1500 or error_rate >= 5.0:
+        return "SEV-2"
+
+    return "SEV-3"
+
+
+def find_likely_cause(health_data: dict):
+    recent_change = health_data["recent_change"].lower()
+
+    if "deployed" in recent_change or "release" in recent_change:
+        return "Recent deployment is a likely contributor."
+
+    if health_data["latency_p95_ms"] > 1000:
+        return "High latency suggests a downstream dependency or performance bottleneck."
+
+    if health_data["error_rate_percent"] > 4:
+        return "Elevated errors suggest service instability or dependency failures."
+
+    return "No obvious cause detected from current signals."
+
+
+def recommend_action(severity: str):
+    if severity == "SEV-1":
+        return "Page on-call immediately, start incident bridge, check rollback readiness."
+    if severity == "SEV-2":
+        return "Notify service owner, investigate recent changes, validate dependency health."
+    if severity == "SEV-3":
+        return "Monitor closely and review logs/metrics for trend confirmation."
+    return "No immediate action required."
+
+
+def analyze_health(health_data: dict):
+    severity = classify_severity(health_data)
+    likely_cause = find_likely_cause(health_data)
+    action = recommend_action(severity)
 
     return f"""
-Service: {health_data["service"]}
-Status: DEGRADED
+================ SRE INCIDENT TRIAGE REPORT ================
 
-Availability: {health_data["availability"]}
-P95 latency: {health_data["latency_p95_ms"]} ms
-Error rate: {health_data["error_rate_percent"]}%
-Recent change: {health_data["recent_change"]}
+Service: {health_data["service"]}
+Status: {health_data["status"].upper()}
+Severity: {severity}
+
+Evidence:
+- Availability: {health_data["availability"]}
+- P95 latency: {health_data["latency_p95_ms"]} ms
+- Error rate: {health_data["error_rate_percent"]}%
+- Recent change: {health_data["recent_change"]}
 
 Likely cause:
-Recent deployment or elevated downstream errors.
+{likely_cause}
 
 Recommended action:
-Investigate the recent change, check dependency health, and confirm rollback readiness.
+{action}
+
+Leadership summary:
+{health_data["service"]} is currently {health_data["status"]} with severity {severity}. The main signals are availability {health_data["availability"]}, p95 latency {health_data["latency_p95_ms"]} ms, and error rate {health_data["error_rate_percent"]}%.
+
+============================================================
 """
 
 
