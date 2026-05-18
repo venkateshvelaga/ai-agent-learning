@@ -718,19 +718,43 @@ Make sure `.env` is not listed.
 
 ---
 
-## Next Planned Enhancements
+## Recommended Next Enhancements
 
-Possible next steps:
+Recommended learning order:
 
-- Convert the current ADK-style Python agent into a Google ADK-based agent
-- Add multi-service health checks
-- Add incident history
-- Add Slack-style incident summary
-- Add automated runbook recommendation
-- Add unit tests
-- Add Docker support
-- Add GitHub Actions CI
-- Add a small UI for triggering analysis
+1. Add multi-service health checks
+   - Support commands like:
+     `python -m sre_agent.agent_mcp checkout payment order`
+   - Rank services by severity.
+   - Generate an overall incident summary.
+
+2. Add automated runbook recommendation
+   - Add local runbook files.
+   - Recommend the best runbook based on severity, latency, errors, and recent changes.
+
+3. Add incident history
+   - Store past incident analyses locally.
+   - Compare current incidents with previous patterns.
+
+4. Add Slack-style incident summary
+   - Generate short updates suitable for incident channels and leadership updates.
+
+5. Add unit tests
+   - Test severity classification, cause detection, runbook selection, and multi-service ranking.
+
+6. Add Docker support
+   - Containerize the mock monitoring API and agent.
+
+7. Add GitHub Actions CI
+   - Run tests automatically on every push.
+
+8. Convert the current ADK-style Python agent into a Google ADK-based agent
+   - Register tools with an actual ADK agent.
+   - Use ADK runner/session concepts.
+   - Compare ADK tool calling with MCP tool calling.
+
+9. Add a small UI for triggering analysis
+   - Add a simple local web UI or Streamlit-style interface.
 
 ---
 
