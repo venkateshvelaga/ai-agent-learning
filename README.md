@@ -1,7 +1,6 @@
-cat > README.md << 'README_EOF'
 # AI Agent Learning Project
 
-This is a personal learning project for building an SRE-style AI agent using Python, FastAPI, and Google Gemini.
+This is a personal learning project for building an SRE-style AI agent using Python, FastAPI, Google Gemini, and MCP.
 
 The project demonstrates how an agent can call a monitoring API, analyze service health signals, classify severity, identify likely causes, and generate both deterministic and AI-assisted incident triage reports.
 
@@ -11,19 +10,10 @@ All services, metrics, incidents, and deployment details in this project are syn
 
 ## What This Project Demonstrates
 
-This project demonstrates a simple but realistic agent-style architecture:
+This project demonstrates a simple but realistic agent-style architecture with two ways of interacting with tools:
 
-~~~text
-Mock Monitoring API
-        ↓
-Monitoring Tool
-        ↓
-Incident Analyzer
-        ↓
-Gemini AI Explanation
-        ↓
-Human-readable report + structured JSON
-~~~
+1. Direct Python tool call
+2. MCP-based tool call
 
 The key learning idea is:
 
@@ -32,11 +22,95 @@ Tools get facts.
 Rules classify facts.
 LLMs explain facts.
 Agents orchestrate the workflow.
+MCP standardizes how agents call tools.
 ~~~
 
 ---
 
-## Project Structure
+## Two Interaction Modes
+
+This project supports two ways to run the SRE agent.
+
+---
+
+### Mode 1: Direct Python Tool Agent
+
+In this mode, the agent directly imports and calls the Python monitoring tool.
+
+~~~text
+Direct Agent
+      ↓
+monitoring_tools.get_service_health()
+      ↓
+Mock Monitoring API
+      ↓
+Incident Analyzer
+      ↓
+Gemini Explanation
+      ↓
+Incident Report
+~~~
+
+Run with:
+
+~~~bash
+python -m sre_agent.agent checkout
+~~~
+
+This mode is simpler and easier to understand first.
+
+---
+
+### Mode 2: MCP-Based Agent
+
+In this mode, the agent does not call the monitoring tool directly.
+
+Instead, it acts as an MCP client. The MCP client starts/connects to an MCP server. The MCP server exposes the monitoring function as a tool.
+
+~~~text
+MCP Agent
+      ↓
+MCP Client
+      ↓
+MCP Server
+      ↓
+MCP Tool: get_service_health_tool()
+      ↓
+monitoring_tools.get_service_health()
+      ↓
+Mock Monitoring API
+      ↓
+Incident Analyzer
+      ↓
+Gemini Explanation
+      ↓
+Incident Report
+~~~
+
+Run with:
+
+~~~bash
+python -m sre_agent.agent_mcp checkout
+~~~
+
+This mode is closer to how tools can be exposed through a standard protocol and reused by different AI clients.
+
+---
+
+## Direct Tool vs MCP Tool
+
+| Area | Direct Python Tool Agent | MCP-Based Agent |
+|---|---|---|
+| Command | `python -m sre_agent.agent checkout` | `python -m sre_agent.agent_mcp checkout` |
+| Tool call style | Direct Python import/function call | MCP client/server tool call |
+| Simplicity | Simpler | More realistic integration pattern |
+| Tool discovery | Not needed | MCP supports tool discovery |
+| Reusability | Mostly this app | MCP tools can be reused by MCP-compatible clients |
+| Best for | Learning basic agent flow | Learning standardized tool integration |
+
+---
+
+## Current Architecture
 
 ~~~text
 ai-agent-learning/
@@ -47,10 +121,24 @@ ai-agent-learning/
 ├── sre_agent/
 │   ├── __init__.py
 │   ├── agent.py
+│   ├── agent_mcp.py
+│   ├── mcp_client_test.py
+│   │
+│   ├── ai/
+│   │   ├── __init__.py
+│   │   └── gemini_explainer.py
 │   │
 │   ├── analysis/
 │   │   ├── __init__.py
 │   │   └── incident_analyzer.py
+│   │
+│   ├── mcp_server/
+│   │   ├── __init__.py
+│   │   └── server.py
+│   │
+│   ├── reporting/
+│   │   ├── __init__.py
+│   │   └── report_formatter.py
 │   │
 │   └── tools/
 │       ├── __init__.py
@@ -106,9 +194,46 @@ sre_agent/tools/monitoring_tools.py
 
 Its responsibility is to call the mock monitoring API and fetch service health data.
 
-This is considered a "tool" because it reaches outside the agent to retrieve facts from an external system.
+This is the actual implementation used by both the direct agent and the MCP server.
 
-### 3. Incident Analyzer
+### 3. MCP Server
+
+The MCP server lives in:
+
+~~~text
+sre_agent/mcp_server/server.py
+~~~
+
+It exposes the monitoring function as an MCP tool:
+
+~~~text
+get_service_health_tool(service_name)
+~~~
+
+The MCP server is not the agent. It is a tool provider.
+
+### 4. MCP Client Test
+
+The MCP client test lives in:
+
+~~~text
+sre_agent/mcp_client_test.py
+~~~
+
+It verifies that the MCP server can:
+
+- start successfully
+- list available tools
+- call `get_service_health_tool`
+- return health data
+
+Run with:
+
+~~~bash
+python -m sre_agent.mcp_client_test
+~~~
+
+### 5. Incident Analyzer
 
 The incident analyzer lives in:
 
@@ -125,24 +250,41 @@ Its responsibility is to apply deterministic SRE rules:
 
 This is internal reasoning logic, not an external tool.
 
-### 4. SRE Agent Orchestrator
+### 6. Gemini Explainer
 
-The main agent lives in:
-
-~~~text
-sre_agent/agent.py
-~~~
-
-Its responsibility is to orchestrate the workflow:
+The Gemini explainer lives in:
 
 ~~~text
-1. Read service name from command line
-2. Call monitoring tool
-3. Build rule-based incident analysis
-4. Ask Gemini for AI-generated explanation
-5. Print human-readable report
-6. Print structured JSON output
+sre_agent/ai/gemini_explainer.py
 ~~~
+
+Its responsibility is to call Gemini and generate a human-readable incident explanation based on:
+
+- service health data
+- rule-based incident analysis
+
+### 7. Report Formatter
+
+The report formatter lives in:
+
+~~~text
+sre_agent/reporting/report_formatter.py
+~~~
+
+Its responsibility is to format the final incident triage report.
+
+Both the direct agent and MCP-based agent reuse this module.
+
+### 8. Agent Entrypoints
+
+There are two agent entrypoints:
+
+~~~text
+sre_agent/agent.py       # Direct Python tool agent
+sre_agent/agent_mcp.py   # MCP-based agent
+~~~
+
+Both produce similar incident reports, but they fetch service health differently.
 
 ---
 
@@ -259,7 +401,7 @@ os.getenv("GEMINI_API_KEY")
 
 ## Running the Project
 
-You need two terminal windows.
+You need at least two terminal windows.
 
 ---
 
@@ -291,9 +433,7 @@ http://127.0.0.1:8000/docs
 
 ---
 
-### Terminal 2: Run the SRE Agent
-
-Because the project now uses Python package-style imports, run the agent as a module:
+### Terminal 2 Option A: Run Direct Python Tool Agent
 
 ~~~bash
 cd ai-agent-learning
@@ -301,7 +441,7 @@ source .venv/Scripts/activate
 python -m sre_agent.agent checkout
 ~~~
 
-You can test different service names:
+Try different services:
 
 ~~~bash
 python -m sre_agent.agent checkout
@@ -309,13 +449,41 @@ python -m sre_agent.agent payment
 python -m sre_agent.agent order
 ~~~
 
-Do not run it like this anymore:
+---
+
+### Terminal 2 Option B: Run MCP-Based Agent
 
 ~~~bash
-python sre_agent/agent.py checkout
+cd ai-agent-learning
+source .venv/Scripts/activate
+python -m sre_agent.agent_mcp checkout
 ~~~
 
-The module command is preferred because `sre_agent` is now a package.
+Try different services:
+
+~~~bash
+python -m sre_agent.agent_mcp checkout
+python -m sre_agent.agent_mcp payment
+python -m sre_agent.agent_mcp order
+~~~
+
+The MCP-based agent starts the MCP server through stdio using:
+
+~~~bash
+python -m sre_agent.mcp_server.server
+~~~
+
+You do not need to manually start the MCP server in a separate terminal for this local stdio setup.
+
+---
+
+### Optional: Test MCP Server Directly
+
+~~~bash
+python -m sre_agent.mcp_client_test
+~~~
+
+This lists MCP tools and calls the MCP health tool directly.
 
 ---
 
@@ -323,6 +491,8 @@ The module command is preferred because `sre_agent` is now a package.
 
 ~~~text
 ================ SRE INCIDENT TRIAGE REPORT ================
+
+Execution mode: MCP-based agent
 
 Service: checkout
 Status: HEALTHY
@@ -425,6 +595,36 @@ This is safer than letting the LLM invent severity or make uncontrolled operatio
 
 ---
 
+## Why Add MCP?
+
+MCP adds a standard tool-provider layer.
+
+Without MCP:
+
+~~~text
+Agent directly imports and calls Python functions.
+~~~
+
+With MCP:
+
+~~~text
+Agent calls tools through an MCP client/server protocol.
+~~~
+
+This matters because MCP tools can be reused by different MCP-compatible clients and agents.
+
+In this project:
+
+~~~text
+MCP server = tool provider
+MCP client = code inside agent_mcp.py
+MCP tool = get_service_health_tool
+Actual implementation = monitoring_tools.get_service_health
+External system = mock monitoring API
+~~~
+
+---
+
 ## Error Handling
 
 The monitoring tool handles common failures gracefully:
@@ -467,47 +667,10 @@ This project is intended to teach:
 - Gemini API integration
 - LLM-assisted explanation
 - tool-style agent architecture
+- MCP server basics
+- MCP client basics
 - Python package imports
 - Git/GitHub workflow
-
----
-
-## Current Architecture
-
-~~~text
-User runs:
-python -m sre_agent.agent checkout
-      |
-      v
-sre_agent/agent.py
-      |
-      v
-sre_agent/tools/monitoring_tools.py
-      |
-      v
-GET http://127.0.0.1:8000/health/{service_name}
-      |
-      v
-mock_monitoring_api/main.py
-      |
-      v
-Synthetic health JSON
-      |
-      v
-sre_agent/analysis/incident_analyzer.py
-      |
-      v
-Rule-based incident analysis
-      |
-      v
-Gemini API
-      |
-      v
-AI-generated explanation
-      |
-      v
-Incident triage report + structured JSON
-~~~
 
 ---
 
@@ -521,11 +684,19 @@ requirements.txt
 .gitignore
 mock_monitoring_api/main.py
 sre_agent/agent.py
+sre_agent/agent_mcp.py
+sre_agent/mcp_client_test.py
 sre_agent/__init__.py
+sre_agent/ai/gemini_explainer.py
+sre_agent/ai/__init__.py
 sre_agent/tools/monitoring_tools.py
 sre_agent/tools/__init__.py
 sre_agent/analysis/incident_analyzer.py
 sre_agent/analysis/__init__.py
+sre_agent/mcp_server/server.py
+sre_agent/mcp_server/__init__.py
+sre_agent/reporting/report_formatter.py
+sre_agent/reporting/__init__.py
 ~~~
 
 Files that should not be committed:
@@ -551,7 +722,7 @@ Make sure `.env` is not listed.
 
 Possible next steps:
 
-- Add real Google ADK agent structure
+- Convert the current ADK-style Python agent into a Google ADK-based agent
 - Add multi-service health checks
 - Add incident history
 - Add Slack-style incident summary
@@ -566,4 +737,3 @@ Possible next steps:
 ## Disclaimer
 
 This is a personal learning project. It does not contain proprietary company code, internal service names, real production data, credentials, or confidential architecture details.
-README_EOF
